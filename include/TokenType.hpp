@@ -1,6 +1,5 @@
 #pragma once
 
-namespace luajvm {
 enum class TokenType {
 
   LEFT_PAREN,    // (
@@ -47,7 +46,6 @@ enum class TokenType {
   FALSE,
   FOR,
   FUNCTION,
-  GOTO,
   IF,
   IN,
   LOCAL,
@@ -61,6 +59,5 @@ enum class TokenType {
   UNTIL,
   WHILE,
 
-  EOF
+  EOF_LUA,
 };
-}
