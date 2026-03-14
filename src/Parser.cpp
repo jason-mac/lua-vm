@@ -1,6 +1,9 @@
 #include "Parser.hpp"
 #include "expressions/BinaryExpr.hpp"
 #include "expressions/CallExpr.hpp"
+#include "expressions/FieldExpr.hpp"
+#include "expressions/FunctionExpr.hpp"
+#include "expressions/IndexExpr.hpp"
 #include "expressions/LiteralExpr.hpp"
 #include "expressions/NameExpr.hpp"
 #include "expressions/UnaryExpr.hpp"
@@ -9,6 +12,9 @@
 #include "statements/BreakStmt.hpp"
 #include "statements/DoStmt.hpp"
 #include "statements/ExpressionStmt.hpp"
+#include "statements/ForEachStmt.hpp"
+#include "statements/ForRangeStmt.hpp"
+#include "statements/FunctionStmt.hpp"
 #include "statements/IfStmt.hpp"
 #include "statements/LocalStmt.hpp"
 #include "statements/RepeatStmt.hpp"
@@ -24,7 +30,7 @@
 static bool isBlockCloser(TokenType type)
 {
   return type == TokenType::END || type == TokenType::ELSE || type == TokenType::ELSEIF ||
-         type == TokenType::UNTIL;
+         type == TokenType::UNTIL || type == TokenType::RETURN || type == TokenType::BREAK;
 }
 
 std::vector<std::unique_ptr<Stmt>> Parser::parse()
@@ -61,16 +67,86 @@ std::unique_ptr<Stmt> Parser::statement()
   return expressionStatement();
 }
 
+FuncBody Parser::parseFuncBody()
+{
+  consume(TokenType::LEFT_PAREN, "Expected '(' after function name");
+  std::vector<Token> params;
+  if (!check(TokenType::RIGHT_PAREN))
+  {
+    do
+    {
+      if (params.size() >= 255)
+        throw ParseError("Cannot have more than 255 parameters.", peek().line);
+      params.push_back(consume(TokenType::IDENTIFIER, "Expected parameter name"));
+    } while (match(TokenType::COMMA));
+  }
+  consume(TokenType::RIGHT_PAREN, "Expected ')' after parameters");
+  std::unique_ptr<Stmt> body = blockStatement();
+  consume(TokenType::END, "Expected 'end' after function body");
+  return FuncBody{std::move(params), std::move(body)};
+}
+
 std::unique_ptr<Stmt> Parser::forStatement()
 {
-  // stat ::= for Name `=` exp `,` exp [`,` exp] do block end | for namelist in explist do block end
-  return nullptr;
+  // stat ::= for Name `=` exp `,` exp [`,` exp] do block end | for namelist in explist do block
+  // end
+  Token name = consume(TokenType::IDENTIFIER, "Expected variable name after 'for'.");
+  if (match(TokenType::EQUAL))
+  {
+    return forRangeStatement(name);
+  }
+  return forEachStatement(name);
+}
+
+std::unique_ptr<Stmt> Parser::forEachStatement(Token name)
+{
+  std::vector<Token> names = {name};
+  while (match(TokenType::COMMA))
+  {
+    names.push_back(consume(TokenType::IDENTIFIER, "Expected name in namelist"));
+  }
+  consume(TokenType::IN, "Expected 'in' after namelist");
+  std::vector<std::unique_ptr<Expr>> exprlist;
+
+  do
+  {
+    exprlist.push_back(expression());
+  } while (match(TokenType::COMMA));
+  consume(TokenType::DO, "Expceted 'do' after explist");
+  std::unique_ptr<Stmt> body = blockStatement();
+  consume(TokenType::END, "Expected 'end' after body of for each statement");
+  return std::make_unique<ForEachStmt>(std::move(names), std::move(exprlist), std::move(body));
+}
+
+std::unique_ptr<Stmt> Parser::forRangeStatement(Token name)
+{
+  std::unique_ptr<Expr> start = expression();
+  consume(TokenType::COMMA, "Expected ',' after start value.");
+  std::unique_ptr<Expr> stop = expression();
+  std::unique_ptr<Expr> step = nullptr;
+  if (match(TokenType::COMMA))
+  {
+    step = expression();
+  }
+  consume(TokenType::DO, "Expected 'do' after for declaration");
+  std::unique_ptr<Stmt> body = blockStatement();
+  consume(TokenType::END, "Expected 'end' after body of for statement");
+  return std::make_unique<ForRangeStmt>(
+      std::move(name), std::move(start), std::move(stop), std::move(step), std::move(body));
+}
+
+std::unique_ptr<Expr> Parser::functionExpression()
+{
+  FuncBody body = parseFuncBody();
+  return std::make_unique<FunctionExpr>(std::move(body.params), std::move(body.body));
 }
 
 std::unique_ptr<Stmt> Parser::functionStatement()
 {
-  // stat ::= function funcname funcbody
-  return nullptr;
+  Token name = consume(TokenType::IDENTIFIER, "Expected function name after declaration");
+  FuncBody body = parseFuncBody();
+  auto func = std::make_unique<FunctionExpr>(std::move(body.params), std::move(body.body));
+  return std::make_unique<FunctionStmt>(std::move(name), std::move(func));
 }
 
 std::unique_ptr<Stmt> Parser::returnStatement()
@@ -122,11 +198,26 @@ std::unique_ptr<Stmt> Parser::blockStatement()
   return std::make_unique<BlockStmt>(std::move(statements));
 }
 
+std::unique_ptr<Stmt> Parser::localFunctionStatement()
+{
+  Token name = consume(TokenType::IDENTIFIER, "Expected function name after declaration");
+  FuncBody body = parseFuncBody();
+  auto func = std::make_unique<FunctionExpr>(std::move(body.params), std::move(body.body));
+  return std::make_unique<LocalStmt>(std::move(name), std::move(func));
+}
+
 std::unique_ptr<Stmt> Parser::localStatement()
 {
+  if (match(TokenType::FUNCTION))
+  {
+    return localFunctionStatement();
+  }
   Token name = consume(TokenType::IDENTIFIER, "Expected variable name after 'local'");
   std::unique_ptr<Expr> value = nullptr;
-  if (match(TokenType::EQUAL)) value = expression();
+  if (match(TokenType::EQUAL))
+  {
+    value = expression();
+  }
   return std::make_unique<LocalStmt>(std::move(name), std::move(value));
 }
 
@@ -282,19 +373,23 @@ std::unique_ptr<Expr> Parser::powerExpression()
       [this]() { return powerExpression(); });
 }
 
-// base ::= nil | false | true | Number | String | `...` | function | prefixexp | tableconstructor |
-// unop exp
+// base ::= nil | false | true | Number | String | `...` | function | prefixexp | tableconstructor
+// | unop exp
 std::unique_ptr<Expr> Parser::baseExpression()
 {
   std::unique_ptr<Expr> to_return;
   // exp ::= (nil | false | true | Number | String)
   to_return = literalExpression();
   if (to_return != nullptr) return to_return;
-
+  // exp ::= function funcbody
+  if (check(TokenType::FUNCTION))
+  {
+    match(TokenType::FUNCTION);
+    return functionExpression();
+  }
   // exp ::= (prefixexp)
   to_return = prefixExpression();
   if (to_return != nullptr) return to_return;
-
   // maybe throw here, should cover everything in base
   throw ParseError("Expected expression.", peek().line);
 }
@@ -363,9 +458,14 @@ std::unique_ptr<Expr> Parser::prefixExpression()
     }
     else if (match(TokenType::LEFT_BRACKET)) // t[exp]
     {
+      std::unique_ptr<Expr> index = expression();
+      consume(TokenType::RIGHT_BRACKET, "Expected ']' after expression.");
+      expr = std::make_unique<IndexExpr>(std::move(expr), std::move(index));
     }
     else if (match(TokenType::DOT)) // t.name
     {
+      Token field = consume(TokenType::IDENTIFIER, "Expected field name after '.'.");
+      expr = std::make_unique<FieldExpr>(std::move(expr), std::move(field));
     }
     else break;
   }

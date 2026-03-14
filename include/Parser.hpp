@@ -15,6 +15,12 @@ public:
   ParseError(const std::string& message, int line) : std::runtime_error(message), line(line) {}
 };
 
+struct FuncBody
+{
+  std::vector<Token> params;
+  std::unique_ptr<Stmt> body;
+};
+
 /*
 chunk ::= {stat [`;´]} [laststat [`;´]]
 
@@ -93,12 +99,18 @@ private:
   bool match(std::initializer_list<TokenType> types);
   std::unique_ptr<Stmt> statement();
 
-  /* TODO: finish */
-  std::unique_ptr<Stmt> forStatement();
+  // functions
+  FuncBody parseFuncBody();
   std::unique_ptr<Stmt> functionStatement();
   std::unique_ptr<Stmt> localFunctionStatement();
   std::unique_ptr<Expr> functionExpression();
+
+  /* TODO: finish */
+  std::unique_ptr<Stmt> forStatement();
+  std::unique_ptr<Stmt> forRangeStatement(Token);
+  std::unique_ptr<Stmt> forEachStatement(Token);
   std::unique_ptr<Expr> callExpression();
+
   /********************************************/
 
   std::unique_ptr<Stmt> returnStatement();
