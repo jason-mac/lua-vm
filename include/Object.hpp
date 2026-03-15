@@ -1,6 +1,6 @@
 #pragma once
-#include "Chunk.hpp"
-#include "Value.hpp"
+#include "virtual_machine/Chunk.hpp"
+#include "virtual_machine/Value.hpp"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -22,19 +22,19 @@ struct Object
   Object* next = nullptr;
 };
 
-struct ObjectString : public Object
-{
-  std::string value;
-  uint32_t hash = 0;
-};
-
 struct ObjectFunction : public Object
 {
+  ObjectFunction()
+  {
+    type = ObjType::FUNCTION;
+  }
   int arity = 0;
   int upvalueCount = 0;
   Chunk chunk;
   std::string name;
 };
+
+ObjectFunction* newFunction(const std::string& name = "", int arity = 0);
 
 using NativeFn = std::function<Value(int, Value*)>;
 
@@ -42,6 +42,8 @@ struct ObjectNative : public Object
 {
   NativeFn function;
 };
+
+ObjectNative* newNative(NativeFn function);
 
 struct ObjectUpvalue : public Object
 {
@@ -80,10 +82,6 @@ static inline bool isNative(Value value)
   return isObjType(value, ObjType::NATIVE);
 }
 
-static inline ObjectString* asString(Value value)
-{
-  return static_cast<ObjectString*>(std::get<Object*>(value));
-}
 static inline ObjectFunction* asFunction(Value value)
 {
   return static_cast<ObjectFunction*>(std::get<Object*>(value));

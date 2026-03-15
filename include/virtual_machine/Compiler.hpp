@@ -1,5 +1,6 @@
 #pragma once
 #include "Common.hpp"
+#include "Object.hpp"
 #include "expressions/BinaryExpr.hpp"
 #include "expressions/CallExpr.hpp"
 #include "expressions/Expr.hpp"
@@ -37,14 +38,41 @@ public:
   CompileError(const std::string& message) : std::runtime_error(message) {}
 };
 
+struct Local
+{
+  std::string name;
+  int depth = 0;
+};
+
+enum class FunctionType
+{
+  FUNCTION,
+  SCRIPT
+};
+
 class Compiler : public Visitor
 {
 public:
-  Chunk compile(const std::vector<std::unique_ptr<Stmt>>& stmts);
+  Compiler(FunctionType type = FunctionType::SCRIPT,
+           const std::string& name = "",
+           Compiler* compiler = nullptr)
+  {
+    function = newFunction(name, 0);
+    functionType = type;
+    locals.push_back({"", 0});
+    this->enclosing = compiler;
+  }
+
+  ObjectFunction* compile(const std::vector<std::unique_ptr<Stmt>>& stmts);
 
 private:
+  Compiler* enclosing;
+  ObjectFunction* function;
+  FunctionType functionType;
   int currentLine = 0;
-  Chunk chunk;
+
+  std::vector<Local> locals;
+  int scopeDepth = 0;
 
 private:
   uint8_t makeConstant(Value value);
@@ -86,4 +114,10 @@ private:
   }
 
   uint8_t addConstant(Value value);
+
+  void beginScope();
+  void endScope();
+  int resolveLocal(const std::string& name);
+  void addLocal(const std::string& name);
+  void markInitialized();
 };

@@ -1,4 +1,5 @@
 #include "virtual_machine/Compiler.hpp"
+#include "Debug.hpp"
 #include "expressions/BinaryExpr.hpp"
 #include "expressions/LiteralExpr.hpp"
 #include "expressions/NameExpr.hpp"
@@ -9,30 +10,28 @@
 
 /* TODO:
  * implement
- * 1) visitLocalStmt
- * 2) visitNameExpr
- * 3) visitBreakStmt
- * 4) visitFunctionExpr
- * 5) visitFunctionStmt
- * 6) visitFieldExpr
- * 7) visitIndexExpr
- * 8) visitForRangeStmt
- * 9) visitForEachStmt
- * 10) visitDoStmt
+ * 1) visitBreakStmt - emit JMP with placeholder, save position for patching at loop end
+ * 2) visitFunctionExpr - compile function body into new chunk, emit CLOSURE
+ * 3) visitFunctionStmt - same as visitFunctionExpr but also emit SET_GLOBAL for name
+ * 4) visitFieldExpr - compile object, emit GET_TABLE with field name as constant
+ * 5) visitIndexExpr - compile object, compile index, emit GET_TABLE
+ * 6) visitForEachStmt - compile explist, emit loop with iterator protocol
  */
 
-Chunk Compiler::compile(const std::vector<std::unique_ptr<Stmt>>& stmts)
+ObjectFunction* Compiler::compile(const std::vector<std::unique_ptr<Stmt>>& stmts)
 {
   for (const auto& stmt : stmts)
   {
     stmt->accept(this);
   }
-  return chunk;
+  emitByte((Byte)OpCode::LOAD_NIL);
+  emitByte((Byte)OpCode::RETURN);
+  return function;
 }
 
 uint8_t Compiler::makeConstant(Value value)
 {
-  int index = chunk.addConstant(value);
+  int index = function->chunk.addConstant(value);
   if (index > UINT8_MAX)
   {
     throw CompileError("Too many constants in one chunk");
@@ -42,8 +41,8 @@ uint8_t Compiler::makeConstant(Value value)
 
 void Compiler::emitByte(Byte byte)
 {
-  chunk.code.push_back(byte);
-  chunk.lines.push_back(0);
+  function->chunk.code.push_back(byte);
+  function->chunk.lines.push_back(currentLine);
 }
 
 void Compiler::visitLiteralExpr(const LiteralExpr* expr)
@@ -59,6 +58,7 @@ void Compiler::visitLiteralExpr(const LiteralExpr* expr)
 
 void Compiler::visitReturnStmt(const ReturnStmt* stmt)
 {
+  currentLine = stmt->keyword.line;
   if (stmt->value)
   {
     stmt->value->accept(this);
@@ -68,6 +68,7 @@ void Compiler::visitReturnStmt(const ReturnStmt* stmt)
 
 void Compiler::visitUnaryExpr(const UnaryExpr* expr)
 {
+  currentLine = expr->operator_.line;
   expr->rightOperand->accept(this);
   switch (expr->operator_.type)
   {
@@ -80,6 +81,7 @@ void Compiler::visitUnaryExpr(const UnaryExpr* expr)
 
 void Compiler::visitBinaryExpr(const BinaryExpr* expr)
 {
+  currentLine = expr->op.line;
   expr->left->accept(this);
   expr->right->accept(this);
   switch (expr->op.type)
@@ -104,14 +106,13 @@ void Compiler::visitBinaryExpr(const BinaryExpr* expr)
 }
 void Compiler::visitCallExpr(const CallExpr* expr)
 {
-
+  currentLine = expr->paren.line;
   expr->callee->accept(this);
 
   for (const auto& arg : expr->arguments)
   {
     arg->accept(this);
   }
-
   emitBytes((Byte)OpCode::CALL, (Byte)expr->arguments.size());
 }
 
@@ -120,45 +121,48 @@ int Compiler::emitJump(OpCode op)
   emitByte((Byte)op);
   emitByte(0);
   emitByte(0);
-  return chunk.code.size() - 2;
+  return function->chunk.code.size() - 2;
 }
 
 void Compiler::patchJump(int16_t jumpPos)
 {
-  int16_t offset = chunk.code.size() - jumpPos - 4;
-  chunk.code[jumpPos] = (offset >> 8) & 0xFF;
-  chunk.code[jumpPos + 1] = (offset) & 0xFF;
+  int16_t offset = function->chunk.code.size() - jumpPos - 2;
+  function->chunk.code[jumpPos] = (offset >> 8) & 0xFF;
+  function->chunk.code[jumpPos + 1] = (offset) & 0xFF;
 }
 
 void Compiler::visitIfStmt(const IfStmt* stmt)
 {
   stmt->condition->accept(this);
   int16_t jumpPos = emitJump(OpCode::JMP_IF_FALSE);
+  emitByte((Byte)OpCode::POP);
   stmt->thenBranch->accept(this);
   if (stmt->elseBranch)
   {
     int16_t elseJumpPos = emitJump(OpCode::JMP);
     patchJump(jumpPos);
+    emitByte((Byte)OpCode::POP);
     stmt->elseBranch->accept(this);
     patchJump(elseJumpPos);
   }
   else
   {
     patchJump(jumpPos);
+    emitByte((Byte)OpCode::POP);
   }
 }
 
 void Compiler::emitLoop(int loopStart)
 {
   emitByte((Byte)OpCode::JMP);
-  int16_t offset = -(chunk.code.size() - loopStart + 3);
-  emitByte((offset >> 8) & 0xFF);
-  emitByte(offset & 0xFF);
+  int16_t offset = loopStart - function->chunk.code.size() - 2;
+  emitByte((uint8_t)((offset >> 8) & 0xFF));
+  emitByte((uint8_t)(offset & 0xFF));
 }
 
 void Compiler::visitWhileStmt(const WhileStmt* stmt)
 {
-  int loopStart = this->chunk.code.size();
+  int loopStart = this->function->chunk.code.size();
   stmt->condition->accept(this);
   int16_t jumpPos = emitJump(OpCode::JMP_IF_FALSE);
   stmt->body->accept(this);
@@ -166,17 +170,68 @@ void Compiler::visitWhileStmt(const WhileStmt* stmt)
   patchJump(jumpPos);
 }
 
-void Compiler::visitLocalStmt(const LocalStmt* stmt) {}
+void Compiler::addLocal(const std::string& name)
+{
+  locals.push_back({name, -1});
+}
+
+int Compiler::resolveLocal(const std::string& name)
+{
+  for (int i = this->locals.size() - 1; i >= 0; i--)
+  {
+    Local* local = &this->locals[i];
+    if (name == local->name)
+    {
+      if (local->depth == -1)
+      {
+        throw CompileError("Can't read local variables in its own initializer");
+      }
+      return i;
+    }
+  }
+  return -1;
+}
+
+void Compiler::markInitialized()
+{
+  if (this->scopeDepth == 0) return;
+  this->locals.back().depth = this->scopeDepth;
+}
+
+void Compiler::visitLocalStmt(const LocalStmt* stmt)
+{
+  addLocal(stmt->name.lexeme);
+  if (stmt->value)
+  {
+    stmt->value->accept(this);
+  }
+  else
+  {
+    emitByte((Byte)OpCode::LOAD_NIL);
+  }
+  markInitialized();
+}
+
 void Compiler::visitAssignStmt(const AssignStmt* stmt)
 {
+  currentLine = stmt->name.line;
   stmt->value->accept(this);
-  uint8_t index = makeConstant(stmt->name.lexeme);
-  emitBytes((Byte)OpCode::SET_GLOBAL, index);
+  int slot = resolveLocal(stmt->name.lexeme);
+  if (slot != -1)
+  {
+    emitBytes((Byte)OpCode::SET_LOCAL, (Byte)slot);
+  }
+  else
+  {
+    uint8_t index = makeConstant(stmt->name.lexeme);
+    emitBytes((Byte)OpCode::SET_GLOBAL, index);
+  }
+  emitByte((Byte)OpCode::POP);
 }
 
 void Compiler::visitRepeatStmt(const RepeatStmt* stmt)
 {
-  int loopStart = this->chunk.code.size();
+  int loopStart = this->function->chunk.code.size();
   stmt->body->accept(this);
   stmt->condition->accept(this);
   emitByte((Byte)OpCode::NOT);
@@ -187,27 +242,145 @@ void Compiler::visitRepeatStmt(const RepeatStmt* stmt)
 
 void Compiler::visitDoStmt(const DoStmt* stmt)
 {
+  beginScope();
   stmt->body->accept(this);
+  endScope();
 }
 
-void Compiler::visitForRangeStmt(const ForRangeStmt* stmt) {}
+void Compiler::visitForRangeStmt(const ForRangeStmt* stmt)
+{
+  beginScope();
+
+  addLocal(stmt->name.lexeme);
+  stmt->start->accept(this);
+  markInitialized();
+
+  addLocal("_stop");
+  stmt->stop->accept(this);
+  markInitialized();
+
+  addLocal("_step");
+  if (stmt->step) stmt->step->accept(this);
+  else emitBytes((Byte)OpCode::LOAD_CONST, makeConstant(1.0));
+  markInitialized();
+
+  int loopStart = function->chunk.code.size();
+
+  int iSlot = resolveLocal(stmt->name.lexeme);
+  int stopSlot = resolveLocal("_stop");
+  emitBytes((Byte)OpCode::GET_LOCAL, (Byte)iSlot);
+  emitBytes((Byte)OpCode::GET_LOCAL, (Byte)stopSlot);
+  emitByte((Byte)OpCode::LE);
+  int jumpPos = emitJump(OpCode::JMP_IF_FALSE);
+  emitByte((Byte)OpCode::POP);
+
+  stmt->body->accept(this);
+
+  int stepSlot = resolveLocal("_step");
+  emitBytes((Byte)OpCode::GET_LOCAL, (Byte)iSlot);
+  emitBytes((Byte)OpCode::GET_LOCAL, (Byte)stepSlot);
+  emitByte((Byte)OpCode::ADD);
+  emitBytes((Byte)OpCode::SET_LOCAL, (Byte)iSlot);
+  emitByte((Byte)OpCode::POP);
+
+  emitLoop(loopStart);
+  patchJump(jumpPos);
+  emitByte((Byte)OpCode::POP);
+
+  endScope();
+}
 void Compiler::visitForEachStmt(const ForEachStmt* stmt) {}
-void Compiler::visitFunctionStmt(const FunctionStmt* stmt) {}
+void Compiler::visitFunctionStmt(const FunctionStmt* stmt)
+{
+  Compiler fnCompiler(FunctionType::FUNCTION, stmt->name.lexeme, this);
+  fnCompiler.beginScope();
+  for (auto& param : stmt->function->params)
+  {
+    fnCompiler.addLocal(param.lexeme);
+    fnCompiler.markInitialized();
+    fnCompiler.function->arity++;
+  }
+  stmt->function->body->accept(&fnCompiler);
+  fnCompiler.emitByte((Byte)OpCode::RETURN);
+  ObjectFunction* fn = fnCompiler.function;
+
+  if (scopeDepth > 0)
+  {
+    emitBytes((Byte)OpCode::LOAD_CONST, makeConstant(fn));
+    addLocal(stmt->name.lexeme);
+    markInitialized();
+  }
+  else
+  {
+    emitBytes((Byte)OpCode::LOAD_CONST, makeConstant(fn));
+    uint8_t index = makeConstant(stmt->name.lexeme);
+    emitBytes((Byte)OpCode::SET_GLOBAL, index);
+    emitByte((Byte)OpCode::POP);
+  }
+}
 void Compiler::visitBreakStmt(const BreakStmt* stmt) {}
+
+void Compiler::beginScope()
+{
+  this->scopeDepth++;
+}
+
+void Compiler::endScope()
+{
+  scopeDepth--;
+  while (!locals.empty() && locals.back().depth > scopeDepth)
+  {
+    emitByte((Byte)OpCode::POP);
+    locals.pop_back();
+  }
+}
+
 void Compiler::visitBlockStmt(const BlockStmt* stmt)
 {
+  beginScope();
   for (const auto& s : stmt->statements)
   {
     s->accept(this);
   }
+  endScope();
 }
 
 void Compiler::visitExpressionStmt(const ExpressionStmt* stmt)
 {
   stmt->expression->accept(this);
+  emitByte((Byte)OpCode::POP);
 }
 
-void Compiler::visitNameExpr(const NameExpr* expr) {}
-void Compiler::visitFunctionExpr(const FunctionExpr* expr) {}
+void Compiler::visitNameExpr(const NameExpr* expr)
+{
+  int slot = resolveLocal(expr->name.lexeme);
+  if (slot != -1)
+  {
+    emitBytes((Byte)OpCode::GET_LOCAL, (Byte)slot);
+  }
+  else
+  {
+    uint8_t index = makeConstant(expr->name.lexeme);
+    emitBytes((Byte)OpCode::GET_GLOBAL, index);
+  }
+}
+
+void Compiler::visitFunctionExpr(const FunctionExpr* expr)
+{
+  Compiler fnCompiler(FunctionType::FUNCTION, "", this);
+  fnCompiler.beginScope();
+  for (auto& param : expr->params)
+  {
+    fnCompiler.addLocal(param.lexeme);
+    fnCompiler.markInitialized();
+    fnCompiler.function->arity++;
+  }
+  expr->body->accept(&fnCompiler);
+  fnCompiler.emitByte((Byte)OpCode::LOAD_NIL);
+  fnCompiler.emitByte((Byte)OpCode::RETURN);
+  ObjectFunction* fn = fnCompiler.function;
+  emitBytes((Byte)OpCode::LOAD_CONST, makeConstant(fn));
+}
+
 void Compiler::visitFieldExpr(const FieldExpr* expr) {}
 void Compiler::visitIndexExpr(const IndexExpr* expr) {}

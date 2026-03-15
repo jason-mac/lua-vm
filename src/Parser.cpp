@@ -60,7 +60,7 @@ std::unique_ptr<Stmt> Parser::statement()
   if (match(TokenType::REPEAT)) return repeatStatement();
   if (match(TokenType::DO)) return doStatement();
   if (match(TokenType::IF)) return ifStatement();
-
+  if (match(TokenType::RETURN)) return returnStatement();
   if (match(TokenType::FOR)) return forStatement();
   if (match(TokenType::FUNCTION)) return functionStatement();
 
@@ -527,6 +527,8 @@ void Parser::sync()
       case TokenType::IF:
       case TokenType::WHILE:
       case TokenType::FOR:
+      case TokenType::AND:
+      case TokenType::OR:
       case TokenType::REPEAT:
       case TokenType::DO:
       case TokenType::RETURN:

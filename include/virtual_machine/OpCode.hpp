@@ -1,6 +1,5 @@
 #pragma once
 #include "Common.hpp"
-
 // inspired from risc-v
 enum class OpCode : Byte
 {
@@ -12,39 +11,35 @@ enum class OpCode : Byte
   MOD,
   POW,
   NEG, // unary minus
-
-  AND,
-  OR,
-
-  // logic
+       // logic
   NOT, // unary not
   LEN, // # operator
-
-  // comparison
+       // comparison
+  AND,
+  OR,
   EQ,
   LT,
   LE, // ==, <, <=  (derive ~=, >, >= from these)
-
-  // load
+      // load
   LOAD_CONST,
   LOAD_NIL,
   LOAD_BOOL,
+  // stack
+  POP,
   MOVE,
-
   // control flow
   JMP,
   JMP_IF_FALSE,
-  TEST,
-
+  JMP_IF_TRUE,
   // variables
   GET_GLOBAL,
   SET_GLOBAL,
-
+  GET_LOCAL,
+  SET_LOCAL,
   // functions
   CALL,
   RETURN,
   CLOSURE,
-
   // string
   CONCAT, // ..
 };
