@@ -9,8 +9,8 @@ public:
   Literal value;
   LiteralExpr(Literal value) : value(value) {}
 
-  Register accept(Visitor* v) override
+  void accept(Visitor* v) override
   {
-    return v->visitLiteralExpr(this);
+    v->visitLiteralExpr(this);
   }
 };

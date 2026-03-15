@@ -1,5 +1,4 @@
 #pragma once
-#include "virtual_machine/Bytecode.hpp"
 
 class LocalStmt;
 class AssignStmt;
@@ -45,12 +44,12 @@ public:
   virtual void visitExpressionStmt(const ExpressionStmt* stmt) = 0;
 
   // expressions
-  virtual Register visitLiteralExpr(const LiteralExpr* expr) = 0;
-  virtual Register visitBinaryExpr(const BinaryExpr* expr) = 0;
-  virtual Register visitUnaryExpr(const UnaryExpr* expr) = 0;
-  virtual Register visitNameExpr(const NameExpr* expr) = 0;
-  virtual Register visitCallExpr(const CallExpr* expr) = 0;
-  virtual Register visitFunctionExpr(const FunctionExpr* expr) = 0;
-  virtual Register visitFieldExpr(const FieldExpr* expr) = 0;
-  virtual Register visitIndexExpr(const IndexExpr* expr) = 0;
+  virtual void visitLiteralExpr(const LiteralExpr* expr) = 0;
+  virtual void visitBinaryExpr(const BinaryExpr* expr) = 0;
+  virtual void visitUnaryExpr(const UnaryExpr* expr) = 0;
+  virtual void visitNameExpr(const NameExpr* expr) = 0;
+  virtual void visitCallExpr(const CallExpr* expr) = 0;
+  virtual void visitFunctionExpr(const FunctionExpr* expr) = 0;
+  virtual void visitFieldExpr(const FieldExpr* expr) = 0;
+  virtual void visitIndexExpr(const IndexExpr* expr) = 0;
 };

@@ -1,4 +1,5 @@
 #pragma once
+#include "Common.hpp"
 #include "expressions/BinaryExpr.hpp"
 #include "expressions/CallExpr.hpp"
 #include "expressions/Expr.hpp"
@@ -23,10 +24,11 @@
 #include "statements/Stmt.hpp"
 #include "statements/WhileStmt.hpp"
 #include "virtual_machine/Chunk.hpp"
+#include "virtual_machine/OpCode.hpp"
 
 #include <memory>
 #include <stdexcept>
-#include <unordered_map>
+#include <string>
 #include <vector>
 
 class CompileError : public std::runtime_error
@@ -41,11 +43,12 @@ public:
   Chunk compile(const std::vector<std::unique_ptr<Stmt>>& stmts);
 
 private:
+  int currentLine = 0;
   Chunk chunk;
-  uint8_t nextRegister = 0;
-  std::unordered_map<std::string, uint8_t> locals;
 
 private:
+  uint8_t makeConstant(Value value);
+
   // statements
   void visitLocalStmt(const LocalStmt* stmt) override;
   void visitAssignStmt(const AssignStmt* stmt) override;
@@ -62,17 +65,25 @@ private:
   void visitExpressionStmt(const ExpressionStmt* stmt) override;
 
   // expressions
-  Register visitLiteralExpr(const LiteralExpr* expr) override;
-  Register visitBinaryExpr(const BinaryExpr* expr) override;
-  Register visitUnaryExpr(const UnaryExpr* expr) override;
-  Register visitNameExpr(const NameExpr* expr) override;
-  Register visitCallExpr(const CallExpr* expr) override;
-  Register visitFunctionExpr(const FunctionExpr* expr) override;
-  Register visitFieldExpr(const FieldExpr* expr) override;
-  Register visitIndexExpr(const IndexExpr* expr) override;
+  void visitLiteralExpr(const LiteralExpr* expr) override;
+  void visitBinaryExpr(const BinaryExpr* expr) override;
+  void visitUnaryExpr(const UnaryExpr* expr) override;
+  void visitNameExpr(const NameExpr* expr) override;
+  void visitCallExpr(const CallExpr* expr) override;
+  void visitFunctionExpr(const FunctionExpr* expr) override;
+  void visitFieldExpr(const FieldExpr* expr) override;
+  void visitIndexExpr(const IndexExpr* expr) override;
 
-  // helpers
-  Register allocRegister();
+  void emitByte(Byte byte);
+  void emitConstant(Byte byte, Value value);
+  int emitJump(OpCode op);
+  void patchJump(int16_t jumpPos);
+  void emitLoop(int loopStart);
+
+  template <typename... Bytes> void emitBytes(Bytes... bytes)
+  {
+    (emitByte(bytes), ...);
+  }
+
   uint8_t addConstant(Value value);
-  void emit(OpCode op, Register a, Register b, Register c);
 };

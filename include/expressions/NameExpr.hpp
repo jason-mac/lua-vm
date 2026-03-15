@@ -8,8 +8,8 @@ public:
   Token name;
   NameExpr(Token name) : name(std::move(name)) {}
 
-  Register accept(Visitor* v) override
+  void accept(Visitor* v) override
   {
-    return v->visitNameExpr(this);
+    v->visitNameExpr(this);
   }
 };

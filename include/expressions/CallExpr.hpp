@@ -16,8 +16,8 @@ public:
   {
   }
 
-  Register accept(Visitor* v) override
+  void accept(Visitor* v) override
   {
-    return v->visitCallExpr(this);
+    v->visitCallExpr(this);
   }
 };

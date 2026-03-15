@@ -13,8 +13,9 @@ public:
       : left(std::move(l)), op(std::move(o)), right(std::move(r))
   {
   }
-  Register accept(Visitor* v) override
+
+  void accept(Visitor* v) override
   {
-    return v->visitBinaryExpr(this);
+    v->visitBinaryExpr(this);
   }
 };

@@ -9,7 +9,7 @@ class BlockStmt : public Stmt
 public:
   void accept(Visitor* v) override
   {
-    v->visitBreakStmt(this);
+    v->visitBlockStmt(this);
   }
 
 public:

@@ -1,14 +1,50 @@
 #pragma once
-#include <cstdint>
+#include "Common.hpp"
 
-enum class OpCode : uint8_t
+// inspired from risc-v
+enum class OpCode : Byte
 {
-  LOAD_CONST,
-  MOVE,
+  // arithmetic
   ADD,
   SUB,
   MUL,
   DIV,
   MOD,
+  POW,
+  NEG, // unary minus
+
+  AND,
+  OR,
+
+  // logic
+  NOT, // unary not
+  LEN, // # operator
+
+  // comparison
+  EQ,
+  LT,
+  LE, // ==, <, <=  (derive ~=, >, >= from these)
+
+  // load
+  LOAD_CONST,
+  LOAD_NIL,
+  LOAD_BOOL,
+  MOVE,
+
+  // control flow
+  JMP,
+  JMP_IF_FALSE,
+  TEST,
+
+  // variables
+  GET_GLOBAL,
+  SET_GLOBAL,
+
+  // functions
+  CALL,
   RETURN,
+  CLOSURE,
+
+  // string
+  CONCAT, // ..
 };

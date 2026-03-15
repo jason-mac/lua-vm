@@ -13,8 +13,8 @@ public:
   {
   }
 
-  Register accept(Visitor* v) override
+  void accept(Visitor* v) override
   {
-    return v->visitIndexExpr(this);
+    v->visitIndexExpr(this);
   }
 };

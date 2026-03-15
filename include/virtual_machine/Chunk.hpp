@@ -1,10 +1,26 @@
 #pragma once
-#include "Instruction.hpp"
 #include "Value.hpp"
+#include <cstdint>
 #include <vector>
 
-struct Chunk
+using Byte = uint8_t;
+
+class Chunk
 {
-  std::vector<Instruction> code;
+public:
+  std::vector<Byte> code;
   std::vector<Value> constants;
+  std::vector<int> lines;
+
+  void write(uint8_t byte, int line)
+  {
+    code.push_back(byte);
+    lines.push_back(line);
+  }
+
+  int addConstant(Value value)
+  {
+    constants.push_back(value);
+    return constants.size() - 1;
+  }
 };

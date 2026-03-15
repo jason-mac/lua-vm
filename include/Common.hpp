@@ -6,4 +6,5 @@
 #define PAGE_SIZE 4096
 
 using Literal = std::variant<std::monostate, double, std::string, bool>;
-using Byte = char;
+
+using Byte = uint8_t;
