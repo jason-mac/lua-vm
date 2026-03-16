@@ -148,14 +148,14 @@ void Compiler::visitIfStmt(const IfStmt* stmt)
   stmt->condition->accept(this);
 
   int16_t thenJump = emitJump(OpCode::JMP_IF_FALSE);
-  emitByte((Byte)OpCode::POP); // true path: pop condition
+  emitByte((Byte)OpCode::POP);
 
   stmt->thenBranch->accept(this);
 
-  int16_t endJump = emitJump(OpCode::JMP); // always skip false-path pop
+  int16_t endJump = emitJump(OpCode::JMP);
 
   patchJump(thenJump);
-  emitByte((Byte)OpCode::POP); // false path: pop condition
+  emitByte((Byte)OpCode::POP);
 
   if (stmt->elseBranch)
   {

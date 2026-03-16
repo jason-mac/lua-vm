@@ -1,4 +1,3 @@
-#pragma once
 #include "Object.hpp"
 #include "virtual_machine/Chunk.hpp"
 #include <string>

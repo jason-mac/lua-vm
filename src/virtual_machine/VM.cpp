@@ -45,6 +45,32 @@ void VM::init()
         std::cout << "\n";
         return NilValue{};
       });
+
+  globals["type"] = newNative(
+      [](int argc, Value* args) -> Value
+      {
+        if (argc == 0) return std::string("nil");
+
+        const Value& v = args[0];
+
+        if (std::holds_alternative<double>(v)) return std::string("number");
+        if (std::holds_alternative<bool>(v)) return std::string("boolean");
+        if (std::holds_alternative<std::string>(v)) return std::string("string");
+        if (std::holds_alternative<NilValue>(v)) return std::string("nil");
+
+        return std::string("object");
+      });
+
+  globals["input"] = newNative(
+      [](int argc, Value* args) -> Value
+      {
+        std::string line;
+        std::getline(std::cin >> std::ws, line);
+        return line;
+      });
+
+  globals["rand"] =
+      newNative([](int argc, Value* args) -> Value { return (double)rand() / RAND_MAX; });
 }
 
 Byte VM::readByte(CallFrame* frame)
@@ -115,7 +141,7 @@ void VM::binaryOp(Operator oper)
 {
   Value b = pop();
   Value a = pop();
-  push(binaryFunc(oper, a, b)()); // push the result
+  push(binaryFunc(oper, a, b)());
 }
 
 InterpretResult VM::run()
@@ -133,7 +159,7 @@ InterpretResult VM::run()
       case OpCode::MOD: binaryOp(Operator::MODULO); break;
       case OpCode::POW: binaryOp(Operator::POWER); break;
       case OpCode::NEG: push(-std::get<double>(pop())); break;
-      case OpCode::NOT: push(!isFalsey(pop())); break;
+      case OpCode::NOT: push(isFalsey(pop())); break;
       case OpCode::LEN: break;
       case OpCode::EQ: binaryOp(Operator::EQUAL); break;
       case OpCode::LT: binaryOp(Operator::LESS_THAN); break;

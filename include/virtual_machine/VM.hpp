@@ -51,8 +51,6 @@ public:
   InterpretResult interpret(ObjectFunction*);
   void push(Value value);
   Value pop();
-
-private:
   InterpretResult run();
   void resetStack();
   Byte readByte(CallFrame*);
